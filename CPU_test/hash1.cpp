@@ -1,6 +1,5 @@
 /*	多维维线性散列（仅含构造与插入） 3/12
-	下一步：完善并移植到cuda
-*/
+	下一步：完善并移植到cuda*/
 
 
 #include <cstdio>
@@ -25,40 +24,38 @@ struct Record {
 	}
 	Record()
 	{
-		//key = -1;
+		key = NULL;
 		value = -1;
 		next = NULL;
 	}
 };
 struct Page {
 	Record *record;
-	Record *tail;
 	Record *head;
 };
 struct Bulk {
-	Page pages[N];
+	Page pages[N];		//N个桶页一个桶块 方便管理
 };
 
 struct MTH_table {
-	Bulk **dirPrimary; //每个桶块的地址
-	Page **overflowAddr;
+	Bulk **dirPrimary; //每个桶块地址的数组
+	Page **overflowAddr; //暂时未用到
 	int splitLevel;  // 总分裂层数
 	int splitIndex; //要分裂的桶号
-	int *overflowIndex;  //溢出桶数组中下一个待分配的空桶
-	int primaryLen;	//当前目录数组的长度
-	int *overfloweLen; //已分配溢出桶总数
+	int *overflowIndex;  //溢出桶数组中下一个待分配的空桶（暂时未用到）
+	int primaryLen;	//当前目录数组的长度（暂时未用到）
+	int *overfloweLen; //已分配溢出桶总数（暂时未用到）
 	int *recordNumber;  //统计每一个哈希桶链中的记录总数
-	int *preinsertCount; //每个桶链需要的溢出桶数
-	int *sumOverflowBuck; //总的溢出桶数
-	int recoverBucket;
+	int *preinsertCount; //每个桶链需要的溢出桶数（暂时未用到）
+	int *sumOverflowBuck; //总的溢出桶数（暂时未用到）
+	int recoverBucket;//（暂时未用到）
 
 	MTH_table() {
-		dirPrimary = (Bulk **)malloc(sizeof(Bulk *));
-		dirPrimary[0] = (Bulk *)malloc(sizeof(Bulk));
-		//继续分配？？
+		dirPrimary = (Bulk **)malloc(sizeof(Bulk *));//数组分配一个位置
+		dirPrimary[0] = (Bulk *)malloc(sizeof(Bulk));//分配一个桶块
+		//分配桶链head
 		for (int i = 0; i < N; i++) {
 			dirPrimary[0]->pages[i].head= 
-			dirPrimary[0]->pages[i].tail=
 			dirPrimary[0]->pages[i].record = new Record;		
 		}
 		
@@ -67,18 +64,21 @@ struct MTH_table {
 		for (int i = 0; i < N; i++) {
 			overflowAddr[i] = (Page *)malloc(sizeof(Page)); //分配N个溢出桶
 		}*/
+		
+		//为记录变量分配空间
 		recordNumber = (int *)malloc(N * sizeof(int));
 		memset(recordNumber, 0, N * sizeof(int));
+		
 		splitLevel = 0;
 		splitIndex = 0;
 		primaryLen = 0;
 	}
-	int mapping(int *h) {
+	int mapping(int *h) {	//映射到一维空间
 		int result = 0;
 		for (int i = 0; i < D; i++) {
 			int copy = h[i];
 			for (int j = 0; copy > 0; j++) {
-				int temp = copy & 1;
+				int temp = copy & 1;	//取二进制位
 				temp <<= (i + j * D);
 				result += temp;
 				copy >>= 1;
@@ -86,59 +86,62 @@ struct MTH_table {
 		}
 		return result;
 	}
-	int code(int *k) {
+	int code(int *k) {	//计算哈希函数值并映射到一维
 		int L= splitLevel;
 		int hash_code[D];
 		int result;
 		//int l = splitLevel / D;
 		for (int i = 0; i < D; i++) {
-			int level=i<L%D?floor(L/D)+1:floor( L / D); //可以做一个变量来储存
+			int level=i<L%D?floor(L/D)+1:floor( L / D); //可以做一个变量来储存？每一维的分裂层数
 			hash_code[i] = k[i] % (LENGTH << level);
 		}
 		result=mapping(hash_code);
-		if (result < splitIndex) {
+		if (result < splitIndex) {	//启用下一层哈希函数（直接计算起一维映射）
 			result + (N << splitLevel);
 		}
 		return result;
 	}
-	bool trigger(int k) {
+	bool trigger(int k) {	//桶链长度超过3则触发冲突
 		return recordNumber[k] > 3;
 	}
-	void* assign(void *src) {   //分配新空间 
+	/*void* assign(void *src) {   //分配新空间 （没用了 可能之后有用）
 		void *dst = malloc(sizeof(int)*(N << (splitLevel+1)));
 		memset(dst, 0, (N << (splitLevel + 1)) * sizeof(int));
 		memcpy(dst, src, sizeof(int)*(N << splitLevel ));
 		//free(src);
 		return dst;
-	}
-	void expand() {		//index对应问题？？？？？？？？？？？
-		//暂时每次只增加一个桶块  GPU时需要改进
+	}*/
+	void expand() {
+		//暂时每次只扩展一倍  GPU时需要改进
 		//int split_num = (new_rec + cur_rec) / (facA*capacity) - primaryLen;
-		Bulk **new_bulk = (Bulk **)malloc(sizeof(Bulk*)*(1 << splitLevel+1));
-		memcpy(new_bulk, dirPrimary, sizeof(Bulk*)*(1 << splitLevel)); //有问题
+		Bulk **temp1 = dirPrimary;
+		Bulk **new_bulk = (Bulk **)malloc(sizeof(Bulk*)*(1 << splitLevel+1)); //分配新空间
+		memcpy(new_bulk, dirPrimary, sizeof(Bulk*)*(1 << splitLevel));
+		free(temp1);	//释放原来空间
 		dirPrimary = new_bulk;
+		
 		for (int i = 1<<splitLevel; i < 1<<splitLevel+1; i++) {
 			dirPrimary[i] = (Bulk *)malloc(sizeof(Bulk));
 			for (int j = 0; j < N; j++) {
 				dirPrimary[i]->pages[j].head =
-				dirPrimary[i]->pages[j].tail =
 				dirPrimary[i]->pages[j].record = new Record;
-				printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				printf("dir[%d]->pages[%d]  = %d\n", i, j, dirPrimary[i]->pages[j].record->value);
+				//调试语句：printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				//printf("dir[%d]->pages[%d]  = %d\n", i, j, dirPrimary[i]->pages[j].record->value);
 			}
 		}
 
-		//recordNumber,preinsertCount分配空间
+		//为recordNumber,（preinsertCount）分配空间
 		//recordNumber=(int*) assign(recordNumber);
 		int *new_r = (int *)malloc(sizeof(int)*(N << (splitLevel + 1)));
-		int *temp = recordNumber;
+		int *temp2 = recordNumber;
 		memset(new_r, 0, (N << (splitLevel + 1)) * sizeof(int));
 		memcpy(new_r, recordNumber, sizeof(int)*(N << splitLevel));
 		recordNumber = new_r;
-		free(temp);
+		free(temp2);
 		//preinsertCount=(int*) assign(preinsertCount);
+
 	}
-	void split() {     //index对应问题？？？？？？？？？？？
+	void split() {
 		//分裂splitIndex;
 		int index = splitIndex;
 		splitIndex++;
@@ -147,21 +150,21 @@ struct MTH_table {
 		int page_index = index % N ;
 		int new_index = index + (N << splitLevel);
 		printf("i=%d\tj=%d\n", dir_index, page_index);
-		Record *the_rec = dirPrimary[dir_index]->pages[page_index].head->next;
-		Record *new_rec = dirPrimary[dir_index + (1<<splitLevel)]->pages[page_index].head;
-		Record *pre_rec = dirPrimary[dir_index]->pages[page_index].head;
-		Record *temp;
+		Record *the_rec = dirPrimary[dir_index]->pages[page_index].head->next;	//要分裂的桶链的第一个记录
+		Record *new_rec = dirPrimary[dir_index + (1<<splitLevel)]->pages[page_index].head;	//对应的新位置桶链的head
+		Record *pre_rec = dirPrimary[dir_index]->pages[page_index].head;	//要重新计算的记录 的前一个记录
 		for (int i = 0; i < recordNumber[index]; i++)//分裂
 		{
 			if (the_rec == NULL)
-				break;
+				break;	//防止出错 应该删掉
 			int the_v = the_rec->value;
 			//int *the_k = the_rec->key;
 			int *the_k = (int *)malloc(D * sizeof(int));
-			memcpy(the_k, the_rec->key, D * sizeof(int));		//获取键值对
+			memcpy(the_k, the_rec->key, D * sizeof(int));		//获取键值对到the_k,the_v
 			
-			int map_code = code(the_k);
-			if (map_code % (N << (splitLevel + 1)) > index) {	//添加到新增的槽 空位用-1记
+			int map_code = code(the_k);//计算新值  注意：此时splitIndex已经自增
+
+			if (map_code % (N << (splitLevel + 1)) > index) {	//添加到新增的槽 去除空位
 				Record *temp = new Record(the_k, the_v);
 				new_rec->next = temp;
 				new_rec = new_rec->next;
@@ -186,33 +189,27 @@ struct MTH_table {
 		int hash_code[D];
 		if (splitIndex==(N<<splitLevel)) { //一轮分裂已完成
 			splitIndex = 0;
-			expand();
+			//expand();
 			splitLevel++;
 		}
-		/*for (int i = 0; i < D; i++) {
-			hash_code[i] = code(key, i,false);
-		}
-		int map_code = mapping(hash_code);//讲哈希函数的值映射到一维
-		if (map_code < splitIndex) {
-			for (int i = 0; i < D; i++) {
-				hash_code[i] = code(key, i, true);
-			}
-			int map_code = mapping(hash_code);
-		}*/
+
 		int map_code = code(key);
 		printf("#h1=%d \t #h2=%d\n", hash_code[0], hash_code[1]);
 		printf("*map=%d\t *L=%d\n", map_code , splitLevel);
 		printf("+++++Index=%d\n", splitIndex);
-		printf("i = %d\tj = %d\n", map_code / N , map_code % N );
+		printf("i = %d\tj = %d\n", map_code / N , map_code % N );//调试语句
+
 		Page the_page = dirPrimary[map_code / N]->pages[map_code% N];
 		
+		//插入新记录（放到head后）
 		Record *temp = the_page.head->next;
 		the_page.head->next = new Record(key, val);
 		the_page.head->next->next = temp;
 		recordNumber[map_code]++;
+		
 		printf("%d\n", map_code);
 		if (trigger(map_code)) {  //触发冲突
-			if (splitIndex == 0) {
+			if (splitIndex == 0) { //新轮回的第一次 即扩展哈希表
 				expand();
 			}
 			split();
@@ -240,6 +237,7 @@ struct MTH_table {
 		}
 	}
 };
+//原一维相关结构 暂作保留
 /*struct Hash_table {
 	Page **arr; //桶页数组（存储数据）
 	Page **o_arr;//溢出桶
