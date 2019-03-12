@@ -1,5 +1,5 @@
-/*	一维线性散列（仅含构造与插入） 2/26
-	下一步：多维线性散列
+/*	多维维线性散列（仅含构造与插入） 3/12
+	下一步：完善并移植到cuda
 */
 
 
@@ -72,26 +72,32 @@ struct MTH_table {
 		splitLevel = 0;
 		splitIndex = 0;
 		primaryLen = 0;
-		
-	}
-	int code(int *k, int i, bool plus) {
-		int L= splitLevel;
-		if (plus)
-			L++;
-		int level=i<L%D?floor(L/D)+1:floor( L / D); //可以做一个变量来储存
-		int temp = k[i] % (LENGTH << level);
-		return temp;
 	}
 	int mapping(int *h) {
 		int result = 0;
 		for (int i = 0; i < D; i++) {
 			int copy = h[i];
-			for (int j = 0; copy>0; j++) {
+			for (int j = 0; copy > 0; j++) {
 				int temp = copy & 1;
 				temp <<= (i + j * D);
 				result += temp;
 				copy >>= 1;
 			}
+		}
+		return result;
+	}
+	int code(int *k) {
+		int L= splitLevel;
+		int hash_code[D];
+		int result;
+		//int l = splitLevel / D;
+		for (int i = 0; i < D; i++) {
+			int level=i<L%D?floor(L/D)+1:floor( L / D); //可以做一个变量来储存
+			hash_code[i] = k[i] % (LENGTH << level);
+		}
+		result=mapping(hash_code);
+		if (result < splitIndex) {
+			result + (N << splitLevel);
 		}
 		return result;
 	}
@@ -134,16 +140,18 @@ struct MTH_table {
 	}
 	void split() {     //index对应问题？？？？？？？？？？？
 		//分裂splitIndex;
+		int index = splitIndex;
+		splitIndex++;
 		int j = 0; //
-		int dir_index = splitIndex / N;
-		int page_index = (splitIndex % N) ;
-		int new_index = splitIndex + (N << splitLevel);
+		int dir_index = index / N;
+		int page_index = index % N ;
+		int new_index = index + (N << splitLevel);
 		printf("i=%d\tj=%d\n", dir_index, page_index);
 		Record *the_rec = dirPrimary[dir_index]->pages[page_index].head->next;
-		Record *new_rec = dirPrimary[dir_index + splitLevel]->pages[page_index].head;
+		Record *new_rec = dirPrimary[dir_index + (1<<splitLevel)]->pages[page_index].head;
 		Record *pre_rec = dirPrimary[dir_index]->pages[page_index].head;
 		Record *temp;
-		for (int i = 0; i < recordNumber[splitIndex]; i++)//分裂
+		for (int i = 0; i < recordNumber[index]; i++)//分裂
 		{
 			if (the_rec == NULL)
 				break;
@@ -152,12 +160,8 @@ struct MTH_table {
 			int *the_k = (int *)malloc(D * sizeof(int));
 			memcpy(the_k, the_rec->key, D * sizeof(int));		//获取键值对
 			
-			int hash_code[D];
-			for (int i = 0; i < D; i++) {
-				hash_code[i] = code(the_k, i, true);
-			}
-			int map_code = mapping(hash_code);
-			if (map_code % (N << (splitLevel + 1)) > splitIndex) {	//添加到新增的槽 空位用-1记
+			int map_code = code(the_k);
+			if (map_code % (N << (splitLevel + 1)) > index) {	//添加到新增的槽 空位用-1记
 				Record *temp = new Record(the_k, the_v);
 				new_rec->next = temp;
 				new_rec = new_rec->next;
@@ -167,7 +171,7 @@ struct MTH_table {
 				pre_rec->next = the_rec->next;
 				the_rec = the_rec->next;
 				free(temp);
-				recordNumber[splitIndex]--;
+				recordNumber[index]--;
 			}
 			else {
 				pre_rec = the_rec;
@@ -175,7 +179,6 @@ struct MTH_table {
 			}
 			
 		}
-		splitIndex++;
 	}
 
 	
@@ -186,7 +189,7 @@ struct MTH_table {
 			expand();
 			splitLevel++;
 		}
-		for (int i = 0; i < D; i++) {
+		/*for (int i = 0; i < D; i++) {
 			hash_code[i] = code(key, i,false);
 		}
 		int map_code = mapping(hash_code);//讲哈希函数的值映射到一维
@@ -195,7 +198,8 @@ struct MTH_table {
 				hash_code[i] = code(key, i, true);
 			}
 			int map_code = mapping(hash_code);
-		}
+		}*/
+		int map_code = code(key);
 		printf("#h1=%d \t #h2=%d\n", hash_code[0], hash_code[1]);
 		printf("*map=%d\t *L=%d\n", map_code , splitLevel);
 		printf("+++++Index=%d\n", splitIndex);
@@ -212,15 +216,15 @@ struct MTH_table {
 				expand();
 			}
 			split();
+
 		}
 	}
 	void display() {
-		for (int i = 0; i < 80; i++) {
+		for (int i = 0; i < 100; i++) {
 			printf("[%d]: key= ", i);
 			Record *the_record = dirPrimary[i / N ]->pages[i%N].head->next;
 			if (the_record == NULL) {
 				printf("\n");
-				the_record = the_record->next;
 				continue;
 			}
 			else {for (int j = 0; j < recordNumber[i]; j++) {				
@@ -339,11 +343,11 @@ struct MTH_table {
 int main()
 {
 	MTH_table h;
-	for (int i = 0; i < 150; i++)
+	for (int i = 0; i < 300; i++)
 	{
 		int key[2];
-		key[0] = rand() % 100;
-		key[1] = rand() % 100;
+		key[0] = rand() % 1000;
+		key[1] = rand() % 1000;
 		printf("【new】key1 = %d key2 = %d\n", key[0],key[1]);
 		h.insert(i, key);
 	}
